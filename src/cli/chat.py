@@ -118,11 +118,11 @@ async def _process_message(
 
     if stream:
         response_text = ""
-        spinner = Spinner("dots", text="Thinking...")
-        with Live(spinner, refresh_per_second=10, console=console):
-            async for chunk in llm.chat(messages=messages, model=model, temperature=temperature, stream=True):
-                response_text += chunk
-                spinner.update(Text.from_markup(f"[dim]{response_text[-40:]}[/]"))
+        console.print("[dim]Thinking...[/]", end="")
+        async for chunk in llm.chat(messages=messages, model=model, temperature=temperature, stream=True):
+            response_text += chunk
+            console.print(".", end="")
+        console.print()
 
         console.print()
         md = Markdown(response_text)
