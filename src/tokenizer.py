@@ -4,6 +4,8 @@ import json
 from collections import Counter
 from pathlib import Path
 from typing import List, Sequence, Tuple
+import tempfile
+import os
 
 
 class BPETokenizer:
@@ -127,3 +129,65 @@ class BPETokenizer:
         self.unk_token_id = payload["unk_token_id"]
         self.vocab_size = len(self._token_to_id)
         self._initialized = True
+
+
+# Optional SentencePiece tokenizer wrapper. If sentencepiece is not installed
+# the class will raise an informative error when used.
+try:
+    import sentencepiece as spm  # type: ignore
+
+
+    class SentencePieceTokenizer:
+        """Wrapper around SentencePiece for tokenization + model training."""
+
+        def __init__(self, model_prefix: str = "spm", vocab_size: int = 8000) -> None:
+            self.model_prefix = model_prefix
+            self.vocab_size = vocab_size
+            self.model_file: str | None = None
+
+        def fit(self, texts: List[str]) -> None:
+            if not texts:
+                raise ValueError("At least one text is required to fit the tokenizer")
+            # write temporary corpus file required by SentencePiece
+            fd, temp_path = tempfile.mkstemp(prefix="spm_corpus_", suffix=".txt")
+            os.close(fd)
+            with open(temp_path, "w", encoding="utf-8") as fh:
+                for t in texts:
+                    fh.write(t.replace("\n", " ") + "\n")
+
+            model_prefix = f"{self.model_prefix}"
+            spm.SentencePieceTrainer.Train(
+                input=temp_path,
+                model_prefix=model_prefix,
+                vocab_size=self.vocab_size,
+                user_defined_symbols=["<unk>"],
+            )
+            self.model_file = f"{model_prefix}.model"
+            os.remove(temp_path)
+
+        def save(self, path: str | Path) -> None:
+            if self.model_file is None or not Path(self.model_file).exists():
+                raise RuntimeError("SentencePiece model not trained yet")
+            Path(path).write_bytes(Path(self.model_file).read_bytes())
+
+        def load(self, path: str | Path) -> None:
+            dest = Path(self.model_prefix + ".model")
+            dest.write_bytes(Path(path).read_bytes())
+            self.model_file = str(dest)
+
+        def encode(self, text: str) -> List[int]:
+            if not self.model_file:
+                raise RuntimeError("SentencePiece model not loaded")
+            sp = spm.SentencePieceProcessor()
+            sp.Load(self.model_file)
+            return sp.EncodeAsIds(text)
+
+        def decode(self, token_ids: List[int]) -> str:
+            if not self.model_file:
+                raise RuntimeError("SentencePiece model not loaded")
+            sp = spm.SentencePieceProcessor()
+            sp.Load(self.model_file)
+            return sp.DecodeIds(token_ids)
+
+except Exception:
+    SentencePieceTokenizer = None

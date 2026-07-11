@@ -12,11 +12,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+import logging
 
 from configs.model_config import MODEL_CONFIGS
 from src.dataset import TextDataset, clean_text
 from src.model import TinyTransformer
-from src.tokenizer import BPETokenizer
+from src.tokenizer import BPETokenizer, SentencePieceTokenizer
 
 
 def load_texts_from_dir(folder: str) -> List[str]:
@@ -47,15 +48,18 @@ def train_model(
     if model_config is None:
         raise ValueError(f"Unknown model size: {model_size}")
 
-    tokenizer = BPETokenizer(target_vocab_size=target_vocab_size)
-    tokenizer.fit(texts)
+    # tokenizer selection: prefer SentencePiece if available
+    if tokenizer_choice == "sentencepiece" and SentencePieceTokenizer is not None:
+        tokenizer = SentencePieceTokenizer(model_prefix="checkpoints/spm", vocab_size=target_vocab_size)
+        tokenizer.fit(texts)
+    else:
+        if tokenizer_choice == "sentencepiece":
+            logging.warning("SentencePiece not available; falling back to BPETokenizer")
+        tokenizer = BPETokenizer(target_vocab_size=target_vocab_size)
+        tokenizer.fit(texts)
 
-    dataset = TextDataset.from_texts(
-        texts,
-        tokenizer,
-        block_size=model_config["block_size"],
-        stride=1,
-    )
+    # build dataset
+    dataset = TextDataset.from_texts(texts, tokenizer, block_size=model_config["block_size"], stride=1)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     model = TinyTransformer(
@@ -70,6 +74,13 @@ def train_model(
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
 
+    # training loop with per-epoch checkpointing and simple logging
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(level=logging.INFO, filename=str(output_path / "train.log"), filemode="a", format="%(asctime)s %(levelname)s %(message)s")
+    logging.info("Starting training: model_size=%s epochs=%d", model_size, epochs)
+
+    best_val_loss = float("inf")
     model.train()
     for epoch in range(epochs):
         total_loss = 0.0
@@ -81,24 +92,50 @@ def train_model(
             optimizer.step()
             total_loss += loss.item()
 
-        average_loss = total_loss / len(dataloader)
+        average_loss = total_loss / max(1, len(dataloader))
+        logging.info("Epoch %d/%d - train_loss: %.4f", epoch + 1, epochs, average_loss)
         print(f"Epoch {epoch + 1}/{epochs} - loss: {average_loss:.4f}")
 
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    checkpoint = {
-        "model_state_dict": model.state_dict(),
-        "model_config": model_config,
-        "vocab_size": tokenizer.vocab_size,
-    }
-    torch.save(checkpoint, output_path / "tiny_transformer.pt")
-    tokenizer.save(output_path / "tokenizer.json")
+        # save epoch checkpoint
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "model_config": model_config,
+            "vocab_size": tokenizer.vocab_size,
+            "epoch": epoch + 1,
+        }
+        torch.save(checkpoint, output_path / f"tiny_transformer_epoch{epoch+1}.pt")
 
-    metadata = {"model_size": model_size, "target_vocab_size": target_vocab_size, "vocab_size": tokenizer.vocab_size}
-    Path(output_path / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        # write tokenizer and metadata
+        try:
+            tokenizer.save(output_path / "tokenizer.json")
+        except Exception:
+            # some tokenizers may not support save in this wrapper
+            pass
+        metadata = {"model_size": model_size, "target_vocab_size": target_vocab_size, "vocab_size": getattr(tokenizer, "vocab_size", None)}
+        Path(output_path / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
-    print(f"Saved checkpoint to {output_path / 'tiny_transformer.pt'}")
-    print(f"Saved tokenizer to {output_path / 'tokenizer.json'}")
+        # optional validation step: small held-out split
+        # use final portion of texts as quick validation
+        val_texts = texts[-max(1, len(texts) // 10) :]
+        if val_texts:
+            val_dataset = TextDataset.from_texts(val_texts, tokenizer, block_size=model_config["block_size"], stride=1)
+            if len(val_dataset) > 0:
+                val_loader = DataLoader(val_dataset, batch_size=batch_size)
+                val_loss = 0.0
+                model.eval()
+                with torch.no_grad():
+                    for xb, yb in val_loader:
+                        logits = model(xb)
+                        l = criterion(logits.view(-1, logits.size(-1)), yb.view(-1))
+                        val_loss += l.item()
+                val_loss = val_loss / max(1, len(val_loader))
+                logging.info("Epoch %d validation loss: %.4f", epoch + 1, val_loss)
+                model.train()
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    torch.save(checkpoint, output_path / "tiny_transformer_best.pt")
+
+    print(f"Saved checkpoints to {output_path}")
 
 
 if __name__ == "__main__":
