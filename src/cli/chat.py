@@ -31,10 +31,14 @@ async def run_chat(
         return
 
     models_list = await llm.list_models()
-    if models_list:
-        model_name = model or models_list[0]["name"]
+    if model:
+        model_name = model
+    elif models_list:
+        preference = ["llama3.2:1b", "llama3.2", "gemma4", "qwen3.5"]
+        preferred = [m["name"] for p in preference for m in models_list if m["name"].startswith(p)]
+        model_name = preferred[0] if preferred else models_list[0]["name"]
     else:
-        model_name = model or "qwen3.5:latest"
+        model_name = "qwen3.5:latest"
 
     console.print()
     console.print(Panel.fit(
@@ -44,6 +48,19 @@ async def run_chat(
         border_style="blue",
     ))
     console.print()
+
+    console.print("[dim]Warming up model (first load takes a moment)...[/]")
+    try:
+        async for _ in llm.chat(
+            messages=[{"role": "user", "content": "hello"}],
+            model=model_name,
+            temperature=0.1,
+            stream=False,
+        ):
+            pass
+        console.print("[dim]Model ready![/]\n")
+    except Exception as e:
+        console.print(f"[yellow]Warm-up skipped: {e}[/]\n")
 
     history: list[dict] = []
 

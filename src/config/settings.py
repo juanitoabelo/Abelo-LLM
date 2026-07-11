@@ -15,7 +15,7 @@ class LLMSettings:
         self.top_p: float = float(os.getenv("LLM_TOP_P", "0.95"))
 
         self.ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-        self.ollama_request_timeout: int = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+        self.ollama_request_timeout: int = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 
         self.server_host: str = os.getenv("SERVER_HOST", "0.0.0.0")
         self.server_port: int = int(os.getenv("SERVER_PORT", "8000"))
