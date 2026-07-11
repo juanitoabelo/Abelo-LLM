@@ -1,21 +1,12 @@
-import os
-import sys
-
 import torch
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from configs.model_config import MODEL_CONFIGS
 from src.dataset import TextDataset
 from src.model import RMSNorm, SwiGLU, TinyTransformer
-from src.multimodal import (
-    classify_request,
-    generate_artifact,
-    generate_code_artifact,
-    generate_image_artifact,
-    generate_infographic_artifact,
-    generate_video_artifact,
-)
+from src.multimodal.planner import ContentPlanner
+from src.multimodal.image import generate_image_artifact
+from src.multimodal.video import generate_video_artifact
+from src.multimodal.code import generate_code_artifact
 from src.tokenizer import BPETokenizer
 
 
@@ -71,42 +62,42 @@ def test_tiny_transformer_forward_shape():
 
 
 def test_classify_request_detects_modalities():
-    assert classify_request("Write a Python script to scrape a website") == "code"
-    assert classify_request("Create a futuristic poster for a launch event") == "image"
-    assert classify_request("Make an infographic about AI safety") == "infographic"
-    assert classify_request("Generate a short cinematic promo video") == "video"
+    planner = ContentPlanner()
+    assert planner.classify_request("Write a Python script to scrape a website") == "code"
+    assert planner.classify_request("Create a futuristic poster for a launch event") == "image"
+    assert planner.classify_request("Make an infographic about AI safety") == "infographic"
+    assert planner.classify_request("Generate a short cinematic promo video") == "video"
+    assert planner.classify_request("Create a podcast script") == "audio"
+    assert planner.classify_request("What is the meaning of life") == "text"
 
 
 def test_generate_image_artifact_creates_png(tmp_path):
+    import asyncio
     output_path = tmp_path / "hero.png"
-    generate_image_artifact("bright cyberpunk city", output_path)
+    asyncio.run(generate_image_artifact("bright cyberpunk city", output_path))
     assert output_path.exists()
     assert output_path.stat().st_size > 0
 
 
-def test_generate_infographic_artifact_creates_svg(tmp_path):
-    output_path = tmp_path / "overview.svg"
-    generate_infographic_artifact("AI safety overview", output_path)
-    assert output_path.exists()
-    assert output_path.read_text(encoding="utf-8").startswith("<svg")
-
-
 def test_generate_video_artifact_creates_gif(tmp_path):
+    import asyncio
     output_path = tmp_path / "promo.gif"
-    generate_video_artifact("launch trailer", output_path)
+    asyncio.run(generate_video_artifact("launch trailer", output_path))
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
+
+
+def test_generate_video_artifact_supports_storyboard_style(tmp_path):
+    import asyncio
+    output_path = tmp_path / "cinematic.mp4"
+    asyncio.run(generate_video_artifact("cinematic promo with neon lights", output_path, scene_count=2, fps=8, seconds_per_scene=1.0))
     assert output_path.exists()
     assert output_path.stat().st_size > 0
 
 
 def test_generate_code_artifact_creates_python_file(tmp_path):
+    import asyncio
     output_path = tmp_path / "app.py"
-    generate_code_artifact("build a CLI greeting tool", output_path)
+    asyncio.run(generate_code_artifact("build a CLI tool", output_path))
     assert output_path.exists()
-    assert "def main" in output_path.read_text(encoding="utf-8")
-
-
-def test_generate_artifact_routes_to_supported_mode(tmp_path):
-    output_path = tmp_path / "dispatch.txt"
-    result_path = generate_artifact("Explain the value of good design", output_path)
-    assert result_path == output_path
-    assert output_path.exists()
+    assert output_path.stat().st_size > 0

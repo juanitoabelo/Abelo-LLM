@@ -122,3 +122,20 @@ class CausalMultiHeadAttention(nn.Module):
 - Implement the training loop in [src/train.py](src/train.py).
 - Implement generation logic in [src/inference.py](src/inference.py).
 - Keep configuration values such as hidden size, number of layers, and attention heads in [configs](configs).
+
+
+## How to use it
+## Run one of these from the repo root:
+
+## Image:
+
+## python cli.py --prompt "Create a futuristic poster for a launch event" --output poster.png
+## Code:
+
+## python cli.py --prompt "Build a CLI greeting tool" --output app.py
+## Infographic:
+
+## python cli.py --prompt "Make an infographic about AI safety" --output overview.svg
+## Video-style artifact:
+
+## python cli.py --prompt "Generate a short cinematic promo video" --output promo.gif

@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  llm:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - LLM_DEFAULT_MODEL=qwen3.5:latest
+    depends_on:
+      - ollama
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./artifacts:/app/artifacts
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - llm
+
+volumes:
+  ollama_data:

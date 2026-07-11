@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Checkpoints & data
+checkpoints/*.pt
+checkpoints/*.model
+checkpoints/tokenizer.json
+data/raw/
+*.pth
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+coverage/
+
+# Logs
+*.log
+
+# Generated artifacts
+output/
+artifacts/
+
+# Node
+node_modules/
+.next/
+frontend/out/
+
+# Docker
+docker-data/
+
+# TypeScript
+*.tsbuildinfo

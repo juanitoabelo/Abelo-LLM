@@ -1,12 +1,36 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "my_custom_llm"
-version = "0.1.0"
-description = "Tiny from-scratch autoregressive language model using PyTorch"
-requires-python = ">=3.8"
+version = "1.0.0"
+description = "Full-featured local LLM tool with multimodal generation"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Abelo Creative"},
+]
 
-[tool.poetry]
-# optional: kept minimal
+[project.scripts]
+llm = "src.cli.main:cli"
+llm-server = "src.server.app:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

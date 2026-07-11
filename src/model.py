@@ -92,16 +92,6 @@ class SwiGLU(nn.Module):
         return self.fc2(gate * self.fc1(x))
 
 
-class FeedForward(nn.Module):
-    def __init__(self, d_model: int, hidden_size: int) -> None:
-        super().__init__()
-        self.fc1 = nn.Linear(d_model, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, d_model)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fc2(F.gelu(self.fc1(x)))
-
-
 class TransformerBlock(nn.Module):
     def __init__(self, d_model: int, num_heads: int, max_context_len: int, ff_hidden_size: int, use_rotary: bool = True) -> None:
         super().__init__()

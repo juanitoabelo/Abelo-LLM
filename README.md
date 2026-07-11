@@ -1,46 +1,137 @@
 # my_custom_llm
 
-Small from-scratch autoregressive language model (toy) using PyTorch.
+A full-featured local LLM tool with multimodal generation capabilities. Runs entirely on your machine using Ollama for inference — no cloud dependencies, no API keys needed.
 
-Quick start
+## Features
 
-1. Create a Python environment and install requirements:
+- **Interactive Chat** — Rich CLI and web UI with streaming responses
+- **Multimodal Generation** — Images, videos, code, audio, infographics
+- **Local Inference** — Powered by Ollama (supports Qwen, Gemma, Llama, Mistral, and 100+ models)
+- **REST API** — FastAPI server with WebSocket streaming for chat
+- **Custom Transformer** — Train your own tiny transformer from scratch (included)
+- **Docker Support** — Full containerized deployment
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.9+
+- [Ollama](https://ollama.ai) (for LLM inference)
+- At least one model: `ollama pull qwen3.5:latest` (or gemma4, llama3.2, etc.)
+
+### Install
 
 ```bash
+# Clone and enter the project
+cd my_custom_llm
+
+# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Install the package
+pip install -e .
 ```
 
-2. Train on a few sample phrases:
+### Usage
+
+**CLI Chat:**
+```bash
+llm chat
+```
+
+**CLI Chat with initial prompt:**
+```bash
+llm chat "Explain quantum computing in simple terms"
+```
+
+**Generate text:**
+```bash
+llm generate "Write a poem about AI" --temperature 0.8
+```
+
+**Generate an artifact:**
+```bash
+# Auto-detect mode from prompt
+llm create -o output.mp4 "Create a cinematic video about space exploration"
+
+# Specify mode explicitly
+llm create --mode image -o artwork.png "A futuristic city at sunset"
+llm create --mode code -o app.py "A REST API with FastAPI"
+```
+
+**Start the web server:**
+```bash
+llm serve
+# Or directly: python -m src.server.app
+```
+
+**List available models:**
+```bash
+llm models
+```
+
+### Web UI
+
+Start the server, then in another terminal:
 
 ```bash
-python3 src/train.py --texts "hello world" "hello there" "world hello" --output-dir checkpoints --epochs 3
+cd frontend
+npm install
+npm run dev
 ```
 
-3. Generate text:
+Open http://localhost:3000
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/chat` | POST | Chat with streaming SSE response |
+| `/api/generate/text` | POST | Generate text from prompt |
+| `/api/generate/artifact` | POST | Generate image/video/code/audio |
+| `/api/models` | GET | List available models |
+| `/api/models/health` | GET | Backend health check |
+
+## Architecture
+
+```
+src/
+├── config/          # Settings & configuration
+├── llm/             # LLM abstraction layer (Ollama + custom model)
+├── multimodal/      # Image, video, code, audio, text generation
+├── server/          # FastAPI server with REST + SSE streaming
+├── cli/             # Rich CLI with interactive chat
+├── model.py         # Custom tiny transformer architecture
+├── tokenizer.py     # BPE tokenizer implementations
+├── train.py         # Training loop
+└── inference.py     # Text generation with sampling
+```
+
+## Development
 
 ```bash
-python3 src/cli.py --prompt "hello" --checkpoint checkpoints/tiny_transformer_best.pt --tokenizer checkpoints/tokenizer.json --max-new-tokens 16
+# Run tests
+pytest
+
+# Type checking
+pip install mypy && mypy src/
+
+# Linting
+pip install ruff && ruff check src/
 ```
 
-4. Optional: enable the faster tokenizer backend and TensorBoard logs:
+## Docker
 
 ```bash
-python3 src/train.py --texts "hello world" "hello there" "world hello" --output-dir checkpoints --tokenizer-choice tokenizers
+docker-compose up --build
 ```
 
-TensorBoard logs will be written to `checkpoints/tensorboard/` if `tensorboard` is installed.
+## Training Your Own Model
 
-Files
-
-- `src/tokenizer.py` - toy BPE and optional `SentencePieceTokenizer` wrapper.
-- `src/model.py` - transformer building blocks and `TinyTransformer`.
-- `src/train.py` - training loop with checkpointing and simple validation.
-- `src/inference.py` - model loading and greedy generation.
-- `src/eval.py` - compute perplexity on small held-out texts.
-- `configs/model_config.py` - model size presets.
-
-Notes
-
-- This project is intended as a learning scaffold. For production you should use robust tokenizers, larger datasets, distributed training, and careful evaluation.
+```bash
+python -m src.train --data-dir ./data --model-size base --epochs 50 --batch-size 32
+```
