@@ -4,3 +4,4 @@ sentencepiece
 pytest
 tokenizers
 tensorboard
+pillow

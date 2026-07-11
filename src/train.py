@@ -49,6 +49,10 @@ def train_model(
     batch_size: int = 16,
     learning_rate: float = 1e-3,
     tokenizer_choice: str = "auto",
+    gradient_clip: float = 1.0,
+    use_amp: bool = True,
+    gradient_accumulation_steps: int = 1,
+    weight_decay: float = 0.01,
 ) -> None:
     model_config = MODEL_CONFIGS.get(model_size)
     if model_config is None:
@@ -73,6 +77,7 @@ def train_model(
     dataset = TextDataset.from_texts(texts, tokenizer, block_size=model_config["block_size"], stride=1)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = TinyTransformer(
         vocab_size=tokenizer.vocab_size,
         d_model=model_config["d_model"],
@@ -80,10 +85,13 @@ def train_model(
         num_heads=model_config["num_heads"],
         max_context_len=model_config["block_size"],
         ff_hidden_size=model_config["ff_hidden_size"],
-    )
+        dropout=model_config.get("dropout", 0.1),
+    ).to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs))
     criterion = nn.CrossEntropyLoss()
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp and device.type == "cuda")
 
     # training loop with per-epoch checkpointing, TensorBoard (optional), and simple logging
     output_path = Path(output_dir)
@@ -103,13 +111,31 @@ def train_model(
     model.train()
     for epoch in range(epochs):
         total_loss = 0.0
+        model.train()
         for step, (x_batch, y_batch) in enumerate(dataloader, start=1):
-            optimizer.zero_grad()
-            logits = model(x_batch)
-            loss = criterion(logits.view(-1, logits.size(-1)), y_batch.view(-1))
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
+            x_batch = x_batch.to(device)
+            y_batch = y_batch.to(device)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16 if device.type == "cuda" else torch.float32, enabled=use_amp and device.type == "cuda"):
+                logits = model(x_batch)
+                loss = criterion(logits.view(-1, logits.size(-1)), y_batch.view(-1)) / gradient_accumulation_steps
+
+            if device.type == "cuda" and use_amp:
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
+
+            if step % gradient_accumulation_steps == 0 or step == len(dataloader):
+                if device.type == "cuda" and use_amp:
+                    scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
+                if device.type == "cuda" and use_amp:
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+
+            total_loss += loss.item() * gradient_accumulation_steps
 
         average_loss = total_loss / max(1, len(dataloader))
         logging.info("Epoch %d/%d - train_loss: %.4f", epoch + 1, epochs, average_loss)
@@ -158,6 +184,8 @@ def train_model(
                     if tb_writer is not None:
                         tb_writer.add_scalar("val/loss", val_loss, epoch + 1)
 
+        scheduler.step()
+
     if tb_writer is not None:
         try:
             tb_writer.flush()
@@ -179,6 +207,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=16, help="Training batch size")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Learning rate for optimizer")
     parser.add_argument("--tokenizer-choice", choices=["auto", "sentencepiece", "bpe", "tokenizers"], default="auto", help="Which tokenizer implementation to use")
+    parser.add_argument("--gradient-clip", type=float, default=1.0, help="Gradient clipping norm")
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of optimizer steps to accumulate before updating")
+    parser.add_argument("--no-amp", action="store_true", help="Disable mixed precision training")
+    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay for AdamW")
     args = parser.parse_args()
 
     texts = []
@@ -202,4 +234,8 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
         tokenizer_choice=args.tokenizer_choice,
+        gradient_clip=args.gradient_clip,
+        use_amp=not args.no_amp,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        weight_decay=args.weight_decay,
     )
