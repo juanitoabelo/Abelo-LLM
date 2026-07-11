@@ -24,6 +24,14 @@ python3 src/train.py --texts "hello world" "hello there" "world hello" --output-
 python3 src/cli.py --prompt "hello" --checkpoint checkpoints/tiny_transformer_best.pt --tokenizer checkpoints/tokenizer.json --max-new-tokens 16
 ```
 
+4. Optional: enable the faster tokenizer backend and TensorBoard logs:
+
+```bash
+python3 src/train.py --texts "hello world" "hello there" "world hello" --output-dir checkpoints --tokenizer-choice tokenizers
+```
+
+TensorBoard logs will be written to `checkpoints/tensorboard/` if `tensorboard` is installed.
+
 Files
 
 - `src/tokenizer.py` - toy BPE and optional `SentencePieceTokenizer` wrapper.

@@ -2,3 +2,5 @@ torch
 numpy
 sentencepiece
 pytest
+tokenizers
+tensorboard

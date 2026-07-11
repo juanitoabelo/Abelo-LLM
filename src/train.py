@@ -17,7 +17,12 @@ import logging
 from configs.model_config import MODEL_CONFIGS
 from src.dataset import TextDataset, clean_text
 from src.model import TinyTransformer
-from src.tokenizer import BPETokenizer, SentencePieceTokenizer
+from src.tokenizer import BPETokenizer, SentencePieceTokenizer, HFTokenizersWrapper
+try:
+    # tensorboard is optional
+    from torch.utils.tensorboard import SummaryWriter
+except Exception:
+    SummaryWriter = None
 
 
 def load_texts_from_dir(folder: str) -> List[str]:
@@ -43,18 +48,24 @@ def train_model(
     epochs: int = 10,
     batch_size: int = 16,
     learning_rate: float = 1e-3,
+    tokenizer_choice: str = "auto",
 ) -> None:
     model_config = MODEL_CONFIGS.get(model_size)
     if model_config is None:
         raise ValueError(f"Unknown model size: {model_size}")
 
-    # tokenizer selection: prefer SentencePiece if available
-    if tokenizer_choice == "sentencepiece" and SentencePieceTokenizer is not None:
+    # tokenizer selection: prefer HF tokenizers, then SentencePiece, then BPETokenizer
+    if tokenizer_choice in ("auto", "tokenizers") and HFTokenizersWrapper is not None:
+        tokenizer = HFTokenizersWrapper(vocab_size=target_vocab_size)
+        tokenizer.fit(texts)
+    elif tokenizer_choice in ("auto", "sentencepiece") and SentencePieceTokenizer is not None:
         tokenizer = SentencePieceTokenizer(model_prefix="checkpoints/spm", vocab_size=target_vocab_size)
         tokenizer.fit(texts)
     else:
-        if tokenizer_choice == "sentencepiece":
+        if tokenizer_choice == "sentencepiece" and SentencePieceTokenizer is None:
             logging.warning("SentencePiece not available; falling back to BPETokenizer")
+        if tokenizer_choice == "tokenizers" and HFTokenizersWrapper is None:
+            logging.warning("tokenizers library not available; falling back to BPETokenizer")
         tokenizer = BPETokenizer(target_vocab_size=target_vocab_size)
         tokenizer.fit(texts)
 
@@ -74,11 +85,19 @@ def train_model(
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
 
-    # training loop with per-epoch checkpointing and simple logging
+    # training loop with per-epoch checkpointing, TensorBoard (optional), and simple logging
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(level=logging.INFO, filename=str(output_path / "train.log"), filemode="a", format="%(asctime)s %(levelname)s %(message)s")
     logging.info("Starting training: model_size=%s epochs=%d", model_size, epochs)
+
+    # TensorBoard writer
+    tb_writer = None
+    if SummaryWriter is not None:
+        try:
+            tb_writer = SummaryWriter(log_dir=str(output_path / "tensorboard"))
+        except Exception:
+            tb_writer = None
 
     best_val_loss = float("inf")
     model.train()
@@ -95,6 +114,8 @@ def train_model(
         average_loss = total_loss / max(1, len(dataloader))
         logging.info("Epoch %d/%d - train_loss: %.4f", epoch + 1, epochs, average_loss)
         print(f"Epoch {epoch + 1}/{epochs} - loss: {average_loss:.4f}")
+        if tb_writer is not None:
+            tb_writer.add_scalar("train/loss", average_loss, epoch + 1)
 
         # save epoch checkpoint
         checkpoint = {
@@ -134,6 +155,15 @@ def train_model(
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     torch.save(checkpoint, output_path / "tiny_transformer_best.pt")
+                    if tb_writer is not None:
+                        tb_writer.add_scalar("val/loss", val_loss, epoch + 1)
+
+    if tb_writer is not None:
+        try:
+            tb_writer.flush()
+            tb_writer.close()
+        except Exception:
+            pass
 
     print(f"Saved checkpoints to {output_path}")
 
@@ -148,6 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=16, help="Training batch size")
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Learning rate for optimizer")
+    parser.add_argument("--tokenizer-choice", choices=["auto", "sentencepiece", "bpe", "tokenizers"], default="auto", help="Which tokenizer implementation to use")
     args = parser.parse_args()
 
     texts = []
@@ -159,6 +190,9 @@ if __name__ == "__main__":
     if not texts:
         raise ValueError("No training texts were provided")
 
+    # expose tokenizer_choice for train_model
+    tokenizer_choice = args.tokenizer_choice
+
     train_model(
         texts,
         output_dir=args.output_dir,
@@ -167,4 +201,5 @@ if __name__ == "__main__":
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        tokenizer_choice=args.tokenizer_choice,
     )

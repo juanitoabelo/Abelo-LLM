@@ -191,3 +191,56 @@ try:
 
 except Exception:
     SentencePieceTokenizer = None
+
+# Optional Hugging Face `tokenizers` integration (fast, Python-native)
+try:
+    from tokenizers import Tokenizer as _HFTokenizer
+    from tokenizers.models import BPE as _BPEModel
+    from tokenizers.trainers import BpeTrainer as _BpeTrainer
+    from tokenizers.pre_tokenizers import Whitespace as _Whitespace
+
+
+    class HFTokenizersWrapper:
+        """Light wrapper around Hugging Face `tokenizers` library using BPE."""
+
+        def __init__(self, vocab_size: int = 8000, unk_token: str = "<unk>") -> None:
+            self.vocab_size = vocab_size
+            self.unk_token = unk_token
+            self._tokenizer: _HFTokenizer | None = None
+
+        def fit(self, texts: List[str]) -> None:
+            if not texts:
+                raise ValueError("At least one text is required to fit the tokenizer")
+            tok = _HFTokenizer(_BPEModel(unk_token=self.unk_token))
+            trainer = _BpeTrainer(vocab_size=self.vocab_size, special_tokens=[self.unk_token])
+            tok.pre_tokenizer = _Whitespace()
+            tok.train_from_iterator(texts, trainer=trainer)
+            self._tokenizer = tok
+
+        def save(self, path: str | Path) -> None:
+            if self._tokenizer is None:
+                raise RuntimeError("HF tokenizer not trained")
+            self._tokenizer.save(str(path))
+
+        def load(self, path: str | Path) -> None:
+            tok = _HFTokenizer.from_file(str(path))
+            self._tokenizer = tok
+            # set vocab_size attribute if available
+            try:
+                self.vocab_size = len(self._tokenizer.get_vocab())
+            except Exception:
+                pass
+
+        def encode(self, text: str) -> List[int]:
+            if self._tokenizer is None:
+                raise RuntimeError("HF tokenizer not loaded/trained")
+            enc = self._tokenizer.encode(text)
+            return enc.ids
+
+        def decode(self, token_ids: List[int]) -> str:
+            if self._tokenizer is None:
+                raise RuntimeError("HF tokenizer not loaded/trained")
+            return self._tokenizer.decode(token_ids)
+
+except Exception:
+    HFTokenizersWrapper = None
