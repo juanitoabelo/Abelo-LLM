@@ -1,0 +1,90 @@
+{
+  "target_vocab_size": 512,
+  "token_to_id": {
+    "hello there</w>": 0,
+    "hello world</w>": 1,
+    "world hello</w>": 2,
+    "</w>": 3,
+    "<unk>": 4
+  },
+  "merges": [
+    [
+      "h",
+      "e"
+    ],
+    [
+      "he",
+      "l"
+    ],
+    [
+      "hel",
+      "l"
+    ],
+    [
+      "hell",
+      "o"
+    ],
+    [
+      "hello",
+      " "
+    ],
+    [
+      "w",
+      "o"
+    ],
+    [
+      "wo",
+      "r"
+    ],
+    [
+      "wor",
+      "l"
+    ],
+    [
+      "worl",
+      "d"
+    ],
+    [
+      "hello ",
+      "world"
+    ],
+    [
+      "hello world",
+      "</w>"
+    ],
+    [
+      "hello ",
+      "t"
+    ],
+    [
+      "hello t",
+      "he"
+    ],
+    [
+      "hello the",
+      "r"
+    ],
+    [
+      "hello ther",
+      "e"
+    ],
+    [
+      "hello there",
+      "</w>"
+    ],
+    [
+      "world",
+      " "
+    ],
+    [
+      "world ",
+      "hello"
+    ],
+    [
+      "world hello",
+      "</w>"
+    ]
+  ],
+  "unk_token": "<unk>",
+  "unk_token_id": 4
+}
