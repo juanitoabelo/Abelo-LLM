@@ -35,3 +35,29 @@ body {
   background: #333;
   border-radius: 3px;
 }
+
+.drop-zone {
+  border: 2px dashed #333;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+.drop-zone.drag-over {
+  border-color: var(--accent);
+  background-color: rgba(108, 123, 255, 0.08);
+}
+
+.image-preview {
+  position: relative;
+}
+.image-preview:hover .image-remove {
+  opacity: 1;
+}
+.image-remove {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.model-select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}

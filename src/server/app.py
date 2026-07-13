@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.config.settings import get_settings
-from src.server.routes import chat, generate, models
+from src.server.routes import chat, generate, models, upload
 
 app = FastAPI(
     title="my_custom_llm",
@@ -25,13 +25,15 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(generate.router)
 app.include_router(models.router)
+app.include_router(upload.router)
 
-try:
-    artifacts_dir = __import__("pathlib").Path("artifacts")
-    artifacts_dir.mkdir(exist_ok=True)
-    app.mount("/files", StaticFiles(directory=str(artifacts_dir)), name="files")
-except Exception:
-    pass
+for _dir, _mount in [("artifacts", "/files"), ("uploads", "/uploads")]:
+    try:
+        p = __import__("pathlib").Path(_dir)
+        p.mkdir(exist_ok=True)
+        app.mount(_mount, StaticFiles(directory=str(p)), name=_dir)
+    except Exception:
+        pass
 
 
 @app.get("/")

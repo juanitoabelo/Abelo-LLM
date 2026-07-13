@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from typing import AsyncGenerator, Optional
 from urllib.request import Request, urlopen
+import socket
 from urllib.error import URLError
 
 from src.config.settings import get_settings
+
+_SENTINEL = object()
 
 
 class OllamaBackend:
@@ -25,24 +29,44 @@ class OllamaBackend:
                 return json.loads(resp.read().decode())
         except URLError as e:
             raise RuntimeError(f"Ollama request failed: {e.reason}") from e
+        except socket.timeout:
+            raise RuntimeError(f"Ollama timed out after {timeout}s — model may be too large for this system") from None
 
-    def _stream_sync(self, url: str, data: bytes, timeout: Optional[int] = None) -> list[dict]:
+    async def _stream_async(self, url: str, data: bytes, timeout: Optional[int] = None) -> AsyncGenerator[dict, None]:
         timeout = timeout or self.settings.ollama_request_timeout
-        req = Request(url, data=data, headers={"Content-Type": "application/json"})
-        results: list[dict] = []
-        try:
-            with urlopen(req, timeout=timeout) as resp:
-                for line in resp:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        results.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        except URLError as e:
-            raise RuntimeError(f"Ollama stream request failed: {e.reason}") from e
-        return results
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _read() -> None:
+            req = Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
+            try:
+                with urlopen(req, timeout=timeout) as resp:
+                    for line in resp:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            item = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        loop.call_soon_threadsafe(queue.put_nowait, item)
+            except URLError as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            except OSError as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
+
+        thread = threading.Thread(target=_read, daemon=True)
+        thread.start()
+
+        while True:
+            item = await queue.get()
+            if item is _SENTINEL:
+                break
+            if isinstance(item, Exception):
+                raise RuntimeError(f"Ollama stream request failed: {item}") from item
+            yield item
 
     async def generate(
         self,
@@ -53,13 +77,13 @@ class OllamaBackend:
         max_tokens: Optional[int] = None,
         top_k: Optional[int] = None,
         top_p: Optional[float] = None,
-        stream: bool = False,
+        stream: bool = True,
     ) -> AsyncGenerator[str, None]:
         model = model or self.settings.default_model
         payload: dict = {
             "model": model,
             "prompt": prompt,
-            "stream": stream,
+            "stream": True,
             "options": {
                 "temperature": temperature if temperature is not None else self.settings.temperature,
                 "num_predict": max_tokens if max_tokens is not None else self.settings.max_tokens,
@@ -74,17 +98,11 @@ class OllamaBackend:
 
         data = json.dumps(payload).encode()
 
-        loop = asyncio.get_event_loop()
-        if stream:
-            results = await loop.run_in_executor(None, self._stream_sync, self._build_url("/api/generate"), data, None)
-            for item in results:
-                if "response" in item:
-                    yield item["response"]
-                if item.get("done"):
-                    break
-        else:
-            result = await loop.run_in_executor(None, self._request_sync, self._build_url("/api/generate"), data)
-            yield result.get("response", "")
+        async for item in self._stream_async(self._build_url("/api/generate"), data, None):
+            if "response" in item:
+                yield item["response"]
+            if item.get("done"):
+                break
 
     async def chat(
         self,
@@ -92,33 +110,32 @@ class OllamaBackend:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        stream: bool = False,
+        images: Optional[list[str]] = None,
+        stream: bool = True,
     ) -> AsyncGenerator[str, None]:
         model = model or self.settings.default_model
         payload: dict = {
             "model": model,
             "messages": messages,
-            "stream": stream,
+            "stream": True,
             "options": {
                 "temperature": temperature if temperature is not None else self.settings.temperature,
                 "num_predict": max_tokens if max_tokens is not None else self.settings.max_tokens,
             },
         }
 
-        data = json.dumps(payload).encode()
-        loop = asyncio.get_event_loop()
+        if images:
+            last_msg = payload["messages"][-1]
+            if last_msg.get("role") == "user":
+                last_msg["images"] = images
 
-        if stream:
-            results = await loop.run_in_executor(None, self._stream_sync, self._build_url("/api/chat"), data)
-            for item in results:
-                if "message" in item and "content" in item["message"]:
-                    yield item["message"]["content"]
-                if item.get("done"):
-                    break
-        else:
-            result = await loop.run_in_executor(None, self._request_sync, self._build_url("/api/chat"), data)
-            if "message" in result:
-                yield result["message"]["content"]
+        data = json.dumps(payload).encode()
+
+        async for item in self._stream_async(self._build_url("/api/chat"), data, None):
+            if "message" in item and "content" in item["message"]:
+                yield item["message"]["content"]
+            if item.get("done"):
+                break
 
     async def list_models(self) -> list[dict]:
         try:

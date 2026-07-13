@@ -48,9 +48,9 @@ class LocalModelBackend:
     ) -> AsyncGenerator[str, None]:
         self._load()
         import torch
-        from src.inference import generate_text as local_generate
+        from src.inference import _generate_tokens
 
-        result = local_generate(
+        tokens = _generate_tokens(
             prompt,
             self.tokenizer,
             self.model,
@@ -59,7 +59,8 @@ class LocalModelBackend:
             top_k=top_k,
             top_p=top_p,
         )
-        yield result
+        for token in tokens:
+            yield token
 
     async def is_available(self) -> bool:
         if self._loaded:

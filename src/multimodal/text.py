@@ -11,7 +11,7 @@ async def generate_text_artifact(prompt: str, output_path: str | Path) -> Path:
 
     llm = LLMRouter()
     content_parts = []
-    async for chunk in llm.generate(prompt=prompt, temperature=0.7, max_tokens=2048, stream=False):
+    async for chunk in llm.generate(prompt=prompt, temperature=0.7, max_tokens=512, stream=True):
         content_parts.append(chunk)
     content = "".join(content_parts)
 

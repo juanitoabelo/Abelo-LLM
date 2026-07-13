@@ -45,7 +45,7 @@ class ContentPlanner:
         async def _llm_storyboard() -> list[dict] | None:
             full_response = []
             try:
-                async for chunk in self.llm.generate(prompt=planning_prompt, temperature=0.7, max_tokens=1024, stream=False):
+                async for chunk in self.llm.generate(prompt=planning_prompt, temperature=0.7, max_tokens=512, stream=True):
                     full_response.append(chunk)
                 text = "".join(full_response)
                 import json

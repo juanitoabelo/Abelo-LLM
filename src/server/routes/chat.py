@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     stream: bool = True
+    images: list[str] = []
     history: list[dict] = []
 
 
@@ -26,7 +27,7 @@ class ChatRequest(BaseModel):
 async def chat_endpoint(request: ChatRequest):
     llm = LLMRouter()
     backends = await llm.check_backends()
-    if not backends.get("ollama"):
+    if not any(backends.values()):
         raise HTTPException(status_code=503, detail="No LLM backend available")
 
     messages = llm.format_chat_messages(request.system, request.history, request.message)
@@ -38,6 +39,7 @@ async def chat_endpoint(request: ChatRequest):
             model=request.model,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
+            images=request.images or None,
             stream=False,
         ):
             response_parts.append(chunk)
@@ -49,6 +51,7 @@ async def chat_endpoint(request: ChatRequest):
             model=request.model,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
+            images=request.images or None,
             stream=True,
         ):
             yield f"data: {json.dumps({'content': chunk})}\n\n"

@@ -28,12 +28,14 @@ async def generate_code_artifact(prompt: str, output_path: str | Path) -> Path:
 
     llm = LLMRouter()
     code_parts = []
-    async for chunk in llm.generate(
-        prompt=f"Write {language} code for: {prompt}",
-        system=system_prompt,
+    async for chunk in llm.chat(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Write {language} code for: {prompt}"},
+        ],
         temperature=0.3,
-        max_tokens=2048,
-        stream=False,
+        max_tokens=256,
+        stream=True,
     ):
         code_parts.append(chunk)
     code = "".join(code_parts)

@@ -15,6 +15,7 @@ from src.multimodal import (
     generate_image_artifact,
     generate_text_artifact,
     generate_video_artifact,
+    generate_video_from_description,
     generate_audio_artifact,
 )
 
@@ -40,7 +41,7 @@ class GenerateArtifactRequest(BaseModel):
 async def generate_text(request: GenerateTextRequest):
     llm = LLMRouter()
     backends = await llm.check_backends()
-    if not backends.get("ollama"):
+    if not any(backends.values()):
         raise HTTPException(status_code=503, detail="No LLM backend available")
 
     if not request.stream:
@@ -87,9 +88,8 @@ async def generate_artifact(request: GenerateArtifactRequest):
 
     if mode == "video":
         output_path = output_dir / f"{safe_name}_{timestamp}.mp4"
-        await generate_video_artifact(
+        await generate_video_from_description(
             request.prompt, output_path,
-            scene_count=request.scene_count,
             fps=request.fps,
         )
         return {"mode": "video", "path": str(output_path), "url": f"/files/{output_path.name}"}

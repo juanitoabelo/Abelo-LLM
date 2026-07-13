@@ -14,6 +14,7 @@ from src.multimodal import (
     generate_image_artifact,
     generate_text_artifact,
     generate_video_artifact,
+    generate_video_from_description,
     generate_audio_artifact,
 )
 
@@ -97,7 +98,7 @@ def create(mode: str, output: str, scenes: int, fps: int, prompt: str) -> None:
         elif resolved_mode == "video":
             if output_path.suffix not in {".mp4", ".gif", ".mov"}:
                 output_path = output_path.with_suffix(".mp4")
-            await generate_video_artifact(prompt, output_path, scene_count=scenes, fps=fps)
+            await generate_video_from_description(prompt, output_path, fps=fps)
         elif resolved_mode == "code":
             await generate_code_artifact(prompt, output_path)
         elif resolved_mode == "audio":

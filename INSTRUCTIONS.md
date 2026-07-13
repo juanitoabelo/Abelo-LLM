@@ -139,3 +139,18 @@ class CausalMultiHeadAttention(nn.Module):
 ## Video-style artifact:
 
 ## python cli.py --prompt "Generate a short cinematic promo video" --output promo.gif
+
+## ## Below are instruction on how to run this system
+# Generate artifacts
+llm create -o output.mp4 "cinematic space exploration video"
+llm create -o design.png "futuristic city at sunset"
+
+# Web server
+llm serve
+
+# Web UI (in another terminal)
+cd frontend && npm install && npm run dev
+
+## python3 -m uvicorn src.server.app:app --host 0.0.0.0 --port 8000
+
+## ollama pull qwen3.5:latest
