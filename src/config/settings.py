@@ -36,11 +36,20 @@ class LLMSettings:
         self.enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
         self.enable_tools: bool = os.getenv("ENABLE_TOOLS", "true").lower() == "true"
         self.enable_memory: bool = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+        self.enable_guardrails: bool = os.getenv("ENABLE_GUARDRAILS", "true").lower() == "true"
+        self.enable_agent: bool = os.getenv("ENABLE_AGENT", "true").lower() == "true"
         self.context_max_tokens: int = int(os.getenv("CONTEXT_MAX_TOKENS", "4096"))
 
         self.embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
         self.rag_top_k: int = int(os.getenv("RAG_TOP_K", "5"))
         self.rag_min_similarity: float = float(os.getenv("RAG_MIN_SIMILARITY", "0.3"))
+        self.rag_web_fallback: bool = os.getenv("RAG_WEB_FALLBACK", "true").lower() == "true"
+
+        self.rate_limit_max: int = int(os.getenv("RATE_LIMIT_MAX", "30"))
+        self.rate_limit_window: int = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
+
+        self.ai_image_gen: bool = os.getenv("AI_IMAGE_GEN", "false").lower() == "true"
+        self.mcp_server_url: str = os.getenv("MCP_SERVER_URL", "")
 
     @property
     def available_remote_models(self) -> list[str]:

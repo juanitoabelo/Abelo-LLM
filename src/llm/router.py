@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from src.config.settings import get_settings
 from src.llm.ollama import OllamaBackend
@@ -14,6 +15,7 @@ from src.rag.vector_store import VectorStore
 from src.context.manager import ContextManager
 from src.memory.store import MemoryStore
 from src.tools.registry import get_default_registry, ToolRegistry
+from src.monitor.stats import UsageTracker, RequestRecord, estimate_tokens
 
 
 class LLMRouter:
@@ -21,10 +23,15 @@ class LLMRouter:
 
     def __init__(
         self,
-        rag_retriever: Optional[RAGRetriever] = None,
-        context_manager: Optional[ContextManager] = None,
-        memory_store: Optional[MemoryStore] = None,
-        tool_registry: Optional[ToolRegistry] = None,
+        rag_retriever=None,
+        context_manager=None,
+        memory_store=None,
+        tool_registry=None,
+        agent_planner=None,
+        usage_tracker=None,
+        content_filter=None,
+        pii_filter=None,
+        rate_limiter=None,
     ) -> None:
         self.settings = get_settings()
         self.ollama = OllamaBackend()
@@ -41,6 +48,14 @@ class LLMRouter:
         self.context_manager = context_manager or ContextManager()
         self.memory_store = memory_store or MemoryStore(str(base_path / "memory.db"))
         self.tool_registry = tool_registry or get_default_registry()
+        self.usage_tracker = usage_tracker or UsageTracker(str(base_path / "usage.db"))
+
+        from src.agent.planner import AgentPlanner
+        from src.guard.filter import ContentFilter, PIIFilter, RateLimiter
+        self.agent_planner = agent_planner or AgentPlanner()
+        self.content_filter = content_filter or ContentFilter()
+        self.pii_filter = pii_filter or PIIFilter()
+        self.rate_limiter = rate_limiter or RateLimiter()
 
     def _resolve_backend(self, model: Optional[str] = None) -> OllamaBackend | LocalModelBackend:
         if model and any(kw in model.lower() for kw in self.WINNER_KEYWORDS):
@@ -71,23 +86,15 @@ class LLMRouter:
         backend = self._resolve_backend(model)
         if hasattr(backend, 'generate') and not hasattr(backend, 'chat'):
             async for chunk in backend.generate(
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                top_k=top_k,
-                top_p=top_p,
+                prompt=prompt, temperature=temperature, max_tokens=max_tokens,
+                top_k=top_k, top_p=top_p,
             ):
                 yield chunk
         else:
             async for chunk in backend.generate(
-                prompt=prompt,
-                model=model,
-                system=system,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                top_k=top_k,
-                top_p=top_p,
-                stream=stream,
+                prompt=prompt, model=model, system=system,
+                temperature=temperature, max_tokens=max_tokens,
+                top_k=top_k, top_p=top_p, stream=stream,
             ):
                 yield chunk
 
@@ -103,89 +110,94 @@ class LLMRouter:
         enable_rag: bool = True,
         enable_tools: bool = True,
         enable_memory: bool = True,
+        enable_guardrails: bool = True,
     ) -> AsyncGenerator[str, None]:
+        t_start = time.time()
+
         backend = self._resolve_backend(model)
         if backend is not self.ollama:
             user_msg = messages[-1]["content"] if messages else ""
             async for chunk in backend.generate(
-                prompt=user_msg,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                prompt=user_msg, temperature=temperature, max_tokens=max_tokens,
             ):
                 yield chunk
             return
 
         user_query = self._get_last_user_text(messages)
 
+        if enable_guardrails and user_query:
+            blocked = self.content_filter.check_input(user_query)
+            if blocked:
+                yield f"I can't respond to that request (triggered: {blocked})."
+                self._log_request("chat", model, 0, 0, t_start, False, session_id)
+                return
+
+            pii_findings = self.pii_filter.scan(user_query)
+            if pii_findings:
+                pii_types = set(f["type"] for f in pii_findings)
+                yield f"I notice your message may contain sensitive information ({', '.join(pii_types)}). Please avoid sharing personal data."
+                self._log_request("chat", model, 0, 0, t_start, False, session_id)
+                return
+
         enriched_messages = list(messages)
 
         if enable_rag and user_query:
             rag_context = await self.rag_retriever.retrieve_formatted(user_query)
             if rag_context:
-                enriched_messages.insert(
-                    0,
-                    {
-                        "role": "system",
-                        "content": f"Here is relevant context from your knowledge base to help answer:\n\n{rag_context}",
-                    },
-                )
+                enriched_messages.insert(0, {"role": "system", "content": f"Here is relevant context from your knowledge base to help answer:\n\n{rag_context}"})
 
         if enable_memory and user_query and session_id:
             memory_hits = self.memory_store.search(user_query, limit=5)
             if memory_hits:
                 facts = "\n".join(f"- {m['key']}: {m['value']}" for m in memory_hits)
-                enriched_messages.insert(
-                    0,
-                    {
-                        "role": "system",
-                        "content": f"Remembered facts about the user:\n{facts}",
-                    },
-                )
-            if session_id:
-                session_history = self.memory_store.get_session_context(session_id, limit=6)
-                if session_history:
-                    summary = self._summarize_session(session_history)
-                    if summary:
-                        enriched_messages.insert(
-                            0,
-                            {
-                                "role": "system",
-                                "content": f"Earlier in this conversation: {summary}",
-                            },
-                        )
+                enriched_messages.insert(0, {"role": "system", "content": f"Remembered facts about the user:\n{facts}"})
+            session_history = self.memory_store.get_session_context(session_id, limit=6)
+            if session_history:
+                summary = self._summarize_session(session_history)
+                if summary:
+                    enriched_messages.insert(0, {"role": "system", "content": f"Earlier in this conversation: {summary}"})
 
         truncated = self.context_manager.trim_messages(
-            enriched_messages,
-            extra_text="",
+            enriched_messages, extra_text="",
             max_tokens=max_tokens or self.settings.max_tokens,
         )
 
-        if enable_tools:
-            tool_specs = self.tool_registry.get_specs()
-        else:
-            tool_specs = []
+        tool_specs = self.tool_registry.get_specs() if enable_tools else []
 
+        if session_id:
+            self.memory_store.create_session(session_id)
+            user_content = messages[-1].get("content", "") if messages else ""
+            self.memory_store.log_message(session_id, "user", user_content)
+
+        full_response = ""
         async for item in self._chat_with_tools(
-            messages=truncated,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            images=images,
-            tool_specs=tool_specs,
+            messages=truncated, model=model, temperature=temperature,
+            max_tokens=max_tokens, images=images, tool_specs=tool_specs,
             session_id=session_id,
         ):
+            full_response += item
             yield item
 
+        if enable_guardrails and full_response:
+            output_blocked = self.content_filter.check_output(full_response)
+            if output_blocked:
+                pass
+            safe_response = self.pii_filter.sanitize(full_response)
+            if safe_response != full_response:
+                pass
+
+        if session_id:
+            self.memory_store.log_message(session_id, "assistant", full_response)
+
+        tokens_in = estimate_tokens(user_query)
+        tokens_out = estimate_tokens(full_response)
+        self._log_request("chat", model or self.settings.default_model, tokens_in, tokens_out, t_start, True, session_id)
+
     async def _chat_with_tools(
-        self,
-        messages: list[dict],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        images: Optional[list[str]] = None,
-        tool_specs: Optional[list[dict]] = None,
-        session_id: Optional[str] = None,
-        depth: int = 0,
+        self, messages: list[dict], model: Optional[str] = None,
+        temperature: Optional[float] = None, max_tokens: Optional[int] = None,
+        images: Optional[list[str]] = None, tool_specs: Optional[list[dict]] = None,
+        session_id: Optional[str] = None, depth: int = 0,
     ) -> AsyncGenerator[str, None]:
         if depth > 5:
             yield "\n\n[Max tool call depth reached]"
@@ -195,12 +207,8 @@ class LLMRouter:
         tool_calls: list[dict] = []
 
         async for chunk in self.ollama.chat_raw(
-            messages=messages,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            images=images,
-            tools=tool_specs,
+            messages=messages, model=model, temperature=temperature,
+            max_tokens=max_tokens, images=images, tools=tool_specs,
         ):
             content = chunk.get("content")
             calls = chunk.get("tool_calls")
@@ -230,26 +238,14 @@ class LLMRouter:
                 else:
                     tool_output = f"Error: {result.error}"
 
-                messages.append({"role": "assistant", "content": collected} if collected else {
-                    "role": "assistant",
-                    "content": f"[Calling tool: {func_name}]",
-                })
-                messages.append({
-                    "role": "tool",
-                    "content": tool_output,
-                    "name": func_name,
-                })
+                messages.append({"role": "assistant", "content": collected} if collected else {"role": "assistant", "content": f"[Calling tool: {func_name}]"})
+                messages.append({"role": "tool", "content": tool_output, "name": func_name})
                 collected = ""
 
                 async for chunk in self._chat_with_tools(
-                    messages=messages,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    images=images,
-                    tool_specs=tool_specs,
-                    session_id=session_id,
-                    depth=depth + 1,
+                    messages=messages, model=model, temperature=temperature,
+                    max_tokens=max_tokens, images=images, tool_specs=tool_specs,
+                    session_id=session_id, depth=depth + 1,
                 ):
                     yield chunk
 
@@ -269,8 +265,7 @@ class LLMRouter:
         for m in messages:
             if m.get("role") == "user":
                 content = m.get("content", "") or ""
-                words = content.split()
-                for w in words[:10]:
+                for w in content.split()[:10]:
                     clean = w.strip(".,!?;:'\"()[]{}").lower()
                     if len(clean) > 3:
                         user_topics.add(clean)
@@ -279,12 +274,7 @@ class LLMRouter:
             return f"the user previously asked about: {', '.join(topic_list)}"
         return ""
 
-    def format_chat_messages(
-        self,
-        system_prompt: Optional[str],
-        history: list[dict],
-        user_message: str,
-    ) -> list[dict]:
+    def format_chat_messages(self, system_prompt: Optional[str], history: list[dict], user_message: str) -> list[dict]:
         messages: list[dict] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -293,16 +283,24 @@ class LLMRouter:
         messages.append({"role": "user", "content": user_message})
         return messages
 
+    def _log_request(self, endpoint: str, model: str, tokens_in: int, tokens_out: int, t_start: float, success: bool, session_id: Optional[str]) -> None:
+        try:
+            record = RequestRecord(
+                endpoint=endpoint, model=model,
+                tokens_in=tokens_in, tokens_out=tokens_out,
+                duration_ms=(time.time() - t_start) * 1000,
+                success=success, session_id=session_id,
+            )
+            self.usage_tracker.log_request(record)
+        except Exception:
+            pass
+
     async def list_models(self) -> list[dict]:
         ollama_models = await self.ollama.list_models()
         models = []
         for m in ollama_models:
             name = m.get("name", "")
-            models.append({
-                "name": name,
-                "size": m.get("size", 0),
-                "provider": "ollama",
-            })
+            models.append({"name": name, "size": m.get("size", 0), "provider": "ollama"})
         if self.local and self.settings.enable_custom_model:
             models.insert(0, {"name": "winner-model (custom)", "size": 0, "provider": "local"})
         return models

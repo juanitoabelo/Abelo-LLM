@@ -8,6 +8,14 @@ from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 
 
+_AI_AVAILABLE = False
+try:
+    import torch
+    _AI_AVAILABLE = torch.cuda.is_available()
+except ImportError:
+    pass
+
+
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     hex_color = hex_color.lstrip("#")
     if len(hex_color) != 6:
@@ -21,10 +29,24 @@ async def generate_image_artifact(
     width: int = 1280,
     height: int = 900,
     palette: Optional[list[str]] = None,
+    use_ai: bool = False,
 ) -> Path:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    if use_ai and _AI_AVAILABLE:
+        return await _generate_ai_image(prompt, path, width, height)
+
+    return _generate_procedural(prompt, path, width, height, palette)
+
+
+def _generate_procedural(
+    prompt: str,
+    path: Path,
+    width: int,
+    height: int,
+    palette: Optional[list[str]] = None,
+) -> Path:
     if palette is None:
         palette = ["#0a1428", "#1a3a6a"]
 
@@ -37,7 +59,6 @@ async def generate_image_artifact(
 
     center_x, center_y = width // 2, height // 2 - 40
     for r in range(200, 50, -30):
-        alpha = int(255 * (1 - r / 200))
         color = (
             min(255, accent[0] + random.randint(-30, 30)),
             min(255, accent[1] + random.randint(-30, 30)),
@@ -45,7 +66,7 @@ async def generate_image_artifact(
         )
         draw.ellipse(
             (center_x - r, center_y - r, center_x + r, center_y + r),
-            fill=(*color, alpha) if hasattr(draw, "fill") else color,
+            fill=color,
         )
 
     for i in range(3):
@@ -54,7 +75,7 @@ async def generate_image_artifact(
         draw.rounded_rectangle(
             (x, y, x + 120 + i * 30, y + 8),
             radius=4,
-            fill=(*accent[:3], 60) if hasattr(draw, "fill") else accent,
+            fill=accent,
         )
 
     try:
@@ -75,6 +96,34 @@ async def generate_image_artifact(
 
     image.save(path)
     return path
+
+
+async def _generate_ai_image(prompt: str, path: Path, width: int, height: int) -> Path:
+    try:
+        from diffusers import StableDiffusionXLPipeline
+        import torch
+
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            torch_dtype=torch.float16,
+        )
+        pipe = pipe.to("cuda")
+
+        image = pipe(
+            prompt=prompt,
+            width=width,
+            height=height,
+            num_inference_steps=30,
+            guidance_scale=7.5,
+        ).images[0]
+
+        image.save(path)
+        return path
+    except Exception:
+        return _generate_procedural(prompt, path, width, height, None)
+
+
+_is_ai_image_available = _AI_AVAILABLE
 
 
 def bg_gradient(
