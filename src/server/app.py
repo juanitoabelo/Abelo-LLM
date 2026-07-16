@@ -6,12 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.config.settings import get_settings
-from src.server.routes import chat, generate, models, upload
+from src.server.routes import chat, generate, models, upload, rag, memory
 
 app = FastAPI(
     title="my_custom_llm",
-    version="1.0.0",
-    description="Full-featured local LLM tool with multimodal generation",
+    version="2.0.0",
+    description="Full-featured local LLM tool with RAG, tool calling, persistent memory, and multimodal generation",
 )
 
 app.add_middleware(
@@ -26,6 +26,8 @@ app.include_router(chat.router)
 app.include_router(generate.router)
 app.include_router(models.router)
 app.include_router(upload.router)
+app.include_router(rag.router)
+app.include_router(memory.router)
 
 for _dir, _mount in [("artifacts", "/files"), ("uploads", "/uploads")]:
     try:
@@ -40,13 +42,25 @@ for _dir, _mount in [("artifacts", "/files"), ("uploads", "/uploads")]:
 async def root():
     return {
         "name": "my_custom_llm",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "endpoints": {
             "chat": "/api/chat",
             "generate_text": "/api/generate/text",
             "generate_artifact": "/api/generate/artifact",
             "models": "/api/models",
             "health": "/api/models/health",
+            "rag_status": "/api/rag/status",
+            "rag_ingest": "/api/rag/ingest/text",
+            "rag_query": "/api/rag/query",
+            "memory": "/api/memory",
+            "memory_remember": "/api/memory/remember",
+            "memory_sessions": "/api/memory/sessions",
+        },
+        "capabilities": {
+            "rag": True,
+            "tool_calling": True,
+            "persistent_memory": True,
+            "context_management": True,
         },
     }
 

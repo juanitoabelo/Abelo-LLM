@@ -21,6 +21,10 @@ class ChatRequest(BaseModel):
     stream: bool = True
     images: list[str] = []
     history: list[dict] = []
+    session_id: Optional[str] = None
+    enable_rag: bool = True
+    enable_tools: bool = True
+    enable_memory: bool = True
 
 
 @router.post("")
@@ -41,6 +45,10 @@ async def chat_endpoint(request: ChatRequest):
             max_tokens=request.max_tokens,
             images=request.images or None,
             stream=False,
+            session_id=request.session_id,
+            enable_rag=request.enable_rag,
+            enable_tools=request.enable_tools,
+            enable_memory=request.enable_memory,
         ):
             response_parts.append(chunk)
         return {"response": "".join(response_parts)}
@@ -53,6 +61,10 @@ async def chat_endpoint(request: ChatRequest):
             max_tokens=request.max_tokens,
             images=request.images or None,
             stream=True,
+            session_id=request.session_id,
+            enable_rag=request.enable_rag,
+            enable_tools=request.enable_tools,
+            enable_memory=request.enable_memory,
         ):
             yield f"data: {json.dumps({'content': chunk})}\n\n"
         yield "data: [DONE]\n\n"

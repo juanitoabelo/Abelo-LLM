@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Optional
 from urllib.request import Request, urlopen
 import socket
 from urllib.error import URLError
@@ -30,7 +30,7 @@ class OllamaBackend:
         except URLError as e:
             raise RuntimeError(f"Ollama request failed: {e.reason}") from e
         except socket.timeout:
-            raise RuntimeError(f"Ollama timed out after {timeout}s — model may be too large for this system") from None
+            raise RuntimeError(f"Ollama timed out after {timeout}s") from None
 
     async def _stream_async(self, url: str, data: bytes, timeout: Optional[int] = None) -> AsyncGenerator[dict, None]:
         timeout = timeout or self.settings.ollama_request_timeout
@@ -113,6 +113,28 @@ class OllamaBackend:
         images: Optional[list[str]] = None,
         stream: bool = True,
     ) -> AsyncGenerator[str, None]:
+        async for chunk in self.chat_raw(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            images=images,
+            tools=None,
+        ):
+            if "content" in chunk:
+                yield chunk["content"]
+            if chunk.get("done"):
+                break
+
+    async def chat_raw(
+        self,
+        messages: list[dict],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        images: Optional[list[str]] = None,
+        tools: Optional[list[dict]] = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
         model = model or self.settings.default_model
         payload: dict = {
             "model": model,
@@ -129,13 +151,22 @@ class OllamaBackend:
             if last_msg.get("role") == "user":
                 last_msg["images"] = images
 
+        if tools:
+            payload["tools"] = tools
+
         data = json.dumps(payload).encode()
 
         async for item in self._stream_async(self._build_url("/api/chat"), data, None):
-            if "message" in item and "content" in item["message"]:
-                yield item["message"]["content"]
+            result: dict[str, Any] = {"done": item.get("done", False)}
+            if "message" in item:
+                msg = item["message"]
+                if "content" in msg:
+                    result["content"] = msg["content"]
+                if "tool_calls" in msg:
+                    result["tool_calls"] = msg["tool_calls"]
             if item.get("done"):
-                break
+                pass
+            yield result
 
     async def list_models(self) -> list[dict]:
         try:

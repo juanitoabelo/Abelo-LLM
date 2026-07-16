@@ -45,6 +45,11 @@ coverage/
 output/
 artifacts/
 
+# Application databases
+*.db
+*.db-shm
+*.db-wal
+
 # Node
 node_modules/
 .next/

@@ -33,6 +33,15 @@ class LLMSettings:
         self.custom_checkpoint: str = os.getenv("CUSTOM_CHECKPOINT", str(Path(self.checkpoints_dir) / "tiny_transformer_best.pt"))
         self.custom_tokenizer: str = os.getenv("CUSTOM_TOKENIZER", str(Path(self.checkpoints_dir) / "tokenizer.json"))
 
+        self.enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
+        self.enable_tools: bool = os.getenv("ENABLE_TOOLS", "true").lower() == "true"
+        self.enable_memory: bool = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+        self.context_max_tokens: int = int(os.getenv("CONTEXT_MAX_TOKENS", "4096"))
+
+        self.embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+        self.rag_top_k: int = int(os.getenv("RAG_TOP_K", "5"))
+        self.rag_min_similarity: float = float(os.getenv("RAG_MIN_SIMILARITY", "0.3"))
+
     @property
     def available_remote_models(self) -> list[str]:
         return ["qwen3.5:latest", "gemma4:latest", "llama3.2:1b", "llama3.2:3b", "llama3.2:7b", "mistral:latest", "codellama:latest", "deepseek-coder:latest"]
