@@ -15,47 +15,52 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  llm:
-    build: .
+  llm-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8000
-      - LLM_DEFAULT_MODEL=qwen3.5:latest
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
       - ENABLE_RAG=true
       - ENABLE_TOOLS=true
       - ENABLE_MEMORY=true
-      - EMBEDDING_MODEL=nomic-embed-text
+      - ENABLE_AGENT=true
+      - ENABLE_VISION=true
+      - ENABLE_VOICE=false
+      - ENABLE_KNOWLEDGE_GRAPH=true
+      - LOG_LEVEL=INFO
+    volumes:
+      - llm_data:/app/data
+      - llm_checkpoints:/app/checkpoints
     depends_on:
       ollama:
         condition: service_healthy
-    volumes:
-      - ./checkpoints:/app/checkpoints
-      - ./artifacts:/app/artifacts
-      - rag_data:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/models/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
-      llm:
-        condition: service_healthy
+      - llm-server
+    restart: unless-stopped
 
 volumes:
   ollama_data:
-  rag_data:
+  llm_data:
+  llm_checkpoints:

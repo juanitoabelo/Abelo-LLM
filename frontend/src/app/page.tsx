@@ -283,88 +283,19 @@ export default function Home() {
     } finally { setStreaming(false); if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
   }
 
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
     <div className="flex h-screen" style={{ background: 'var(--bg-primary)' }}>
       {/* Image Zoom Modal */}
       {zoomedImage && <ImageModal src={zoomedImage} onClose={() => setZoomedImage(null)} />}
-
-      {/* Sidebar */}
-      {showSidebar && (
-        <div className="sidebar-mobile w-64 flex flex-col gap-4 p-4 overflow-y-auto" style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border)' }}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Dashboard</h2>
-            <button onClick={() => setShowSidebar(false)} className="hover:opacity-70" style={{ color: 'var(--text-muted)' }}>✕</button>
-          </div>
-
-          {/* Theme Toggle */}
-          <div className="flex gap-2">
-            <button onClick={() => setTheme('dark')} className={`flex-1 text-xs rounded-lg px-3 py-2 transition-colors ${theme === 'dark' ? 'bg-blue-600 text-white' : ''}`} style={theme !== 'dark' ? { background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : {}}>Dark</button>
-            <button onClick={() => setTheme('light')} className={`flex-1 text-xs rounded-lg px-3 py-2 transition-colors ${theme === 'light' ? 'bg-blue-600 text-white' : ''}`} style={theme !== 'light' ? { background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' } : {}}>Light</button>
-          </div>
-
-          {/* Conversation Search */}
-          <div>
-            <input ref={searchInputRef} type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search conversation..." className="w-full bg-transparent text-xs rounded-lg px-3 py-2 outline-none" style={{ border: '1px solid var(--border)', color: 'var(--text-primary)' }} />
-          </div>
-
-          <div className="text-xs space-y-2">
-            <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-              <div style={{ color: 'var(--text-muted)' }}>Status</div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className={`w-2 h-2 rounded-full ${backendStatus === 'online' ? 'bg-green-400' : 'bg-red-400'}`} />
-                <span style={{ color: 'var(--text-primary)' }}>{backendStatus === 'online' ? 'Online' : 'Offline'}</span>
-              </div>
-            </div>
-            <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-              <div style={{ color: 'var(--text-muted)' }}>Model</div>
-              <div className="mt-1 truncate" style={{ color: 'var(--text-primary)' }}>{selectedModel || 'None'}</div>
-            </div>
-            {stats && (
-              <>
-                <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-                  <div style={{ color: 'var(--text-muted)' }}>Requests (24h)</div>
-                  <div className="mt-1" style={{ color: 'var(--text-primary)' }}>{stats.total_requests || 0}</div>
-                </div>
-                <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-                  <div style={{ color: 'var(--text-muted)' }}>Tokens (24h)</div>
-                  <div className="mt-1" style={{ color: 'var(--text-primary)' }}>{(stats.total_tokens || 0).toLocaleString()}</div>
-                </div>
-                <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-                  <div style={{ color: 'var(--text-muted)' }}>Avg Response</div>
-                  <div className="mt-1" style={{ color: 'var(--text-primary)' }}>{stats.avg_duration_ms || 0}ms</div>
-                </div>
-              </>
-            )}
-            <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-              <div style={{ color: 'var(--text-muted)' }}>Session Tokens</div>
-              <div className="mt-1" style={{ color: 'var(--text-primary)' }}>{tokenCount.toLocaleString()}</div>
-            </div>
-            <div className="rounded-lg p-3" style={{ background: 'var(--bg-tertiary)' }}>
-              <div style={{ color: 'var(--text-muted)' }}>Session</div>
-              <div className="mt-1 text-[10px] truncate" style={{ color: 'var(--text-primary)' }}>{sessionId.slice(0, 16)}...</div>
-            </div>
-            <div className="rounded-lg p-3 space-y-2" style={{ background: 'var(--bg-tertiary)' }}>
-              <div style={{ color: 'var(--text-muted)' }}>Capabilities</div>
-              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={enableRag} onChange={e => setEnableRag(e.target.checked)} className="rounded" /><span style={{ color: 'var(--text-secondary)' }}>RAG</span></label>
-              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={enableTools} onChange={e => setEnableTools(e.target.checked)} className="rounded" /><span style={{ color: 'var(--text-secondary)' }}>Tools</span></label>
-              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={enableMemory} onChange={e => setEnableMemory(e.target.checked)} className="rounded" /><span style={{ color: 'var(--text-secondary)' }}>Memory</span></label>
-              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={enableThinking} onChange={e => setEnableThinking(e.target.checked)} className="rounded" /><span style={{ color: 'var(--text-secondary)' }}>Thinking</span></label>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button onClick={retryLast} disabled={messages.length < 2} className="rounded-lg px-3 py-2 text-xs disabled:opacity-50 transition-colors" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>↺ Retry Last</button>
-              <button onClick={clearChat} disabled={messages.length === 0} className="rounded-lg px-3 py-2 text-xs disabled:opacity-50 transition-colors" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>🗑 Clear Chat</button>
-              <button onClick={exportChat} disabled={messages.length === 0 || exporting} className="rounded-lg px-3 py-2 text-xs disabled:opacity-50 transition-colors" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>⬇ Export Chat</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Content */}
       <div className="flex flex-col flex-1 h-screen max-w-4xl mx-auto">
         {/* Header */}
         <header className="flex items-center justify-between px-6 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowSidebar(!showSidebar)} className="hover:opacity-70 text-lg" style={{ color: 'var(--text-muted)' }}>☰</button>
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="hover:opacity-70 text-lg" style={{ color: 'var(--text-muted)' }}>☰</button>
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center font-bold text-sm">L</div>
             <div>
               <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>my_custom_llm</h1>
@@ -375,9 +306,6 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="text-sm px-2 py-1 rounded-lg transition-colors" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-              {theme === 'dark' ? '☀️' : '🌙'}
-            </button>
             <select value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="text-xs rounded-lg px-3 py-2 outline-none" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
               {models.length === 0 && <option value="">Loading...</option>}
               {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}

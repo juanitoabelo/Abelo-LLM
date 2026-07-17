@@ -16,6 +16,7 @@ from src.rag.vector_store import VectorStore
 from src.context.manager import ContextManager
 from src.memory.store import MemoryStore
 from src.tools.registry import get_default_registry, ToolRegistry
+from src.cache.prompt_cache import get_cache
 from src.monitor.stats import UsageTracker, RequestRecord, estimate_tokens
 
 
@@ -118,6 +119,14 @@ class LLMRouter:
         enable_thinking: bool = True,
     ) -> AsyncGenerator[str, None]:
         t_start = time.time()
+        cache = get_cache()
+        user_query = self._get_last_user_text(messages)
+        cache_key = (user_query or "", model, temperature)
+        if not stream and not enable_rag and not enable_tools and not enable_memory:
+            cached = cache.get(*cache_key)
+            if cached is not None:
+                yield cached
+                return
 
         backend = self._resolve_backend(model)
         if backend is not self.ollama:
@@ -202,6 +211,12 @@ class LLMRouter:
 
         if session_id:
             self.memory_store.log_message(session_id, "assistant", full_response)
+
+        if not enable_rag and not enable_tools and not enable_memory:
+            try:
+                cache.set(*(user_query or "", model, temperature), full_response)
+            except Exception:
+                pass
 
         tokens_in = estimate_tokens(user_query)
         tokens_out = estimate_tokens(full_response)

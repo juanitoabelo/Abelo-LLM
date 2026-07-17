@@ -38,6 +38,9 @@ class LLMSettings:
         self.enable_memory: bool = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
         self.enable_guardrails: bool = os.getenv("ENABLE_GUARDRAILS", "true").lower() == "true"
         self.enable_agent: bool = os.getenv("ENABLE_AGENT", "true").lower() == "true"
+        self.enable_vision: bool = os.getenv("ENABLE_VISION", "true").lower() == "true"
+        self.enable_voice: bool = os.getenv("ENABLE_VOICE", "true").lower() == "true"
+        self.enable_knowledge_graph: bool = os.getenv("ENABLE_KNOWLEDGE_GRAPH", "true").lower() == "true"
         self.context_max_tokens: int = int(os.getenv("CONTEXT_MAX_TOKENS", "4096"))
 
         self.embedding_model: str = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
@@ -51,11 +54,22 @@ class LLMSettings:
         self.rate_limit_max: int = int(os.getenv("RATE_LIMIT_MAX", "30"))
         self.rate_limit_window: int = int(os.getenv("RATE_LIMIT_WINDOW", "60"))
 
+        self.allowed_origins: list[str] = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+        self.allowed_hosts: list[str] = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0,*.ngrok-free.app").split(",")
+
         self.ai_image_gen: bool = os.getenv("AI_IMAGE_GEN", "false").lower() == "true"
         self.mcp_server_url: str = os.getenv("MCP_SERVER_URL", "")
 
     @property
     def available_remote_models(self) -> list[str]:
+        try:
+            import httpx
+            r = httpx.get(f"{self.ollama_host}/api/tags", timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                return [m["name"] for m in data.get("models", [])]
+        except Exception:
+            pass
         return ["qwen3.5:latest", "gemma4:latest", "llama3.2:1b", "llama3.2:3b", "llama3.2:7b", "mistral:latest", "codellama:latest", "deepseek-coder:latest"]
 
 
