@@ -11,6 +11,12 @@ const links = [
   { href: '/memory', label: 'Memory', icon: '🧠' },
   { href: '/knowledge-graph', label: 'Graph', icon: '🔗' },
   { href: '/models', label: 'Models', icon: '📦' },
+  { href: '/models/manage', label: 'Manage', icon: '⬇️' },
+  { href: '/workspaces', label: 'Workspaces', icon: '🏢' },
+  { href: '/eval', label: 'Eval', icon: '📊' },
+  { href: '/hub', label: 'Hub', icon: '🌐' },
+  { href: '/dashboard', label: 'Dashboard', icon: '📈' },
+  { href: '/playground', label: 'Playground', icon: '🔌' },
   { href: '/auth/login', label: 'Login', icon: '🔐' },
 ]
 

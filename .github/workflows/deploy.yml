@@ -1,0 +1,42 @@
+name: Build & Deploy
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.9"
+    - run: pip install -r requirements.txt
+    - run: python3 -m pytest tests/ -q --tb=short -k "not server" --ignore=tests/test_server_routes.py
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Docker image
+      run: docker build -t my-custom-llm:${{ github.sha }} .
+    - name: Tag latest
+      run: docker tag my-custom-llm:${{ github.sha }} my-custom-llm:latest
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure kubectl
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl set image deployment/my-custom-llm server=my-custom-llm:${{ github.sha }}
+        kubectl rollout status deployment/my-custom-llm

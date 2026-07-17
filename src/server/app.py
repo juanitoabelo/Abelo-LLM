@@ -19,6 +19,11 @@ from src.server.routes.structured import register_structured_routes
 from src.server.routes.plugins import register_plugin_routes
 from src.server.routes import voice as voice_routes
 from src.server.routes import branching as branching_routes
+from src.server.routes import openai as openai_routes
+from src.server.routes import ws as ws_routes
+from src.server.routes import feedback as feedback_routes
+from src.server.routes import workspaces as workspaces_routes
+from src.server.routes import new_features as new_features_routes
 
 app = FastAPI(
     title="my_custom_llm",
@@ -72,6 +77,11 @@ app.include_router(agent.router)
 app.include_router(auth_routes.router)
 app.include_router(voice_routes.router)
 app.include_router(branching_routes.router)
+app.include_router(openai_routes.router)
+app.include_router(feedback_routes.router)
+app.include_router(workspaces_routes.router)
+app.include_router(ws_routes.router)
+app.include_router(new_features_routes.router)
 
 register_training_routes(app)
 register_structured_routes(app)
@@ -119,6 +129,14 @@ async def root():
             "branch_templates": "/api/branch/templates",
             "branch_templates_save": "/api/branch/templates/save",
             "branch_templates_apply": "/api/branch/templates/apply",
+            "openai_models": "/v1/models",
+            "openai_chat": "/v1/chat/completions",
+            "ws_collab": "/ws/chat/{room_id}",
+            "feedback_rating": "/api/feedback/rating",
+            "feedback_preference": "/api/feedback/preference",
+            "feedback_export": "/api/feedback/export",
+            "feedback_stats": "/api/feedback/stats",
+            "workspaces": "/api/workspaces",
         },
         "capabilities": {
             "rag": True,
@@ -147,6 +165,19 @@ async def root():
             "knowledge_graph": settings.enable_knowledge_graph,
             "model_merging": True,
             "conversation_branching": True,
+            "openai_compatible_api": True,
+            "websocket_collaboration": True,
+            "user_feedback_loop": True,
+            "multi_tenant_workspaces": True,
+            "document_pipeline": True,
+            "llm_as_judge_eval": True,
+            "sub_agent_swarm": True,
+            "web_browsing_agent": True,
+            "dpo_training": True,
+            "model_hub_integration": True,
+            "multi_provider_routing": True,
+            "telemetry_tracing": True,
+            "continuous_batching": True,
         },
     }
 
