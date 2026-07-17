@@ -44,6 +44,9 @@ class LLMSettings:
         self.rag_top_k: int = int(os.getenv("RAG_TOP_K", "5"))
         self.rag_min_similarity: float = float(os.getenv("RAG_MIN_SIMILARITY", "0.3"))
         self.rag_web_fallback: bool = os.getenv("RAG_WEB_FALLBACK", "true").lower() == "true"
+        self.enable_hybrid_rag: bool = os.getenv("ENABLE_HYBRID_RAG", "true").lower() == "true"
+        self.enable_reranking: bool = os.getenv("ENABLE_RERANKING", "true").lower() == "true"
+        self.enable_thinking: bool = os.getenv("ENABLE_THINKING", "true").lower() == "true"
 
         self.rate_limit_max: int = int(os.getenv("RATE_LIMIT_MAX", "30"))
         self.rate_limit_window: int = int(os.getenv("RATE_LIMIT_WINDOW", "60"))

@@ -12,6 +12,19 @@ authors = [
     {name = "Abelo Creative"},
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-timeout>=2.2.0",
+    "build>=1.0.0",
+]
+mlx = ["mlx>=0.10.0", "mlx-lm>=0.10.0"]
+unsloth = ["unsloth>=2024.0", "datasets>=2.14.0", "trl>=0.7.0", "accelerate>=0.25.0"]
+all = ["my_custom_llm[dev]", "my_custom_llm[mlx]", "my_custom_llm[unsloth]"]
+
 [project.scripts]
 llm = "src.cli.main:cli"
 llm-server = "src.server.app:main"
@@ -34,3 +47,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "*/__init__.py"]

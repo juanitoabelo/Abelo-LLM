@@ -4,7 +4,7 @@ from typing import Optional
 
 from src.rag.embedder import OllamaEmbedder
 from src.rag.loader import DocumentLoader
-from src.rag.vector_store import VectorStore
+from src.rag.vector_store import VectorStore, CrossEncoderReranker
 
 
 class RAGRetriever:
@@ -15,25 +15,37 @@ class RAGRetriever:
         top_k: int = 5,
         min_similarity: float = 0.3,
         enable_web_fallback: bool = True,
+        enable_hybrid: bool = True,
+        enable_rerank: bool = True,
     ) -> None:
         self.store = vector_store
         self.embedder = embedder or OllamaEmbedder()
         self.top_k = top_k
         self.min_similarity = min_similarity
         self.enable_web_fallback = enable_web_fallback
+        self.enable_hybrid = enable_hybrid
+        self.enable_rerank = enable_rerank
+        self.reranker = CrossEncoderReranker()
 
     async def retrieve(self, query: str, top_k: Optional[int] = None) -> list[dict]:
         k = top_k or self.top_k
         query_vector = await self.embedder.embed_query(query)
         if not query_vector:
             return []
-        results = self.store.similarity_search(query_vector, top_k=k)
-        filtered = [r for r in results if r["similarity"] >= self.min_similarity]
 
+        if self.enable_hybrid:
+            results = self.store.hybrid_search(query, query_vector, top_k=k, alpha=0.5)
+        else:
+            results = self.store.similarity_search(query_vector, top_k=k)
+
+        filtered = [r for r in results if r.get("similarity", 1.0) >= self.min_similarity]
         if not filtered and self.enable_web_fallback:
             web_results = await self._web_fallback(query)
             if web_results:
                 return web_results
+
+        if self.enable_rerank and len(filtered) > 1:
+            filtered = await self.reranker.rerank(query, filtered, top_k=k)
 
         return filtered
 
@@ -45,8 +57,11 @@ class RAGRetriever:
         for r in results:
             source = r["source"]
             content = r["content"]
-            sim = r["similarity"]
-            sections.append(f"[Source: {source} (relevance: {sim:.2f})]\n{content}")
+            sim = r.get("similarity", 0.0)
+            score_label = f"(score: {sim:.2f})"
+            if "hybrid_score" in r:
+                score_label = f"(hybrid: {r['hybrid_score']:.2f})"
+            sections.append(f"[Source: {source} {score_label}]\n{content}")
         return "\n\n".join(sections)
 
     async def _web_fallback(self, query: str) -> list[dict]:

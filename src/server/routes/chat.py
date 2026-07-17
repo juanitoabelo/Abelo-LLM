@@ -25,6 +25,7 @@ class ChatRequest(BaseModel):
     enable_rag: bool = True
     enable_tools: bool = True
     enable_memory: bool = True
+    enable_thinking: bool = True
 
 
 @router.post("")
@@ -49,9 +50,11 @@ async def chat_endpoint(request: ChatRequest):
             enable_rag=request.enable_rag,
             enable_tools=request.enable_tools,
             enable_memory=request.enable_memory,
+            enable_thinking=request.enable_thinking,
         ):
             response_parts.append(chunk)
-        return {"response": "".join(response_parts)}
+        full = "".join(response_parts)
+        return {"response": full}
 
     async def event_stream():
         async for chunk in llm.chat(
@@ -65,6 +68,7 @@ async def chat_endpoint(request: ChatRequest):
             enable_rag=request.enable_rag,
             enable_tools=request.enable_tools,
             enable_memory=request.enable_memory,
+            enable_thinking=request.enable_thinking,
         ):
             yield f"data: {json.dumps({'content': chunk})}\n\n"
         yield "data: [DONE]\n\n"

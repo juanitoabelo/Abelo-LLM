@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from typing import Any, AsyncGenerator, Optional
@@ -16,6 +17,9 @@ from src.context.manager import ContextManager
 from src.memory.store import MemoryStore
 from src.tools.registry import get_default_registry, ToolRegistry
 from src.monitor.stats import UsageTracker, RequestRecord, estimate_tokens
+
+
+THINK_TAG_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
 
 class LLMRouter:
@@ -111,6 +115,7 @@ class LLMRouter:
         enable_tools: bool = True,
         enable_memory: bool = True,
         enable_guardrails: bool = True,
+        enable_thinking: bool = True,
     ) -> AsyncGenerator[str, None]:
         t_start = time.time()
 
@@ -128,6 +133,7 @@ class LLMRouter:
         if enable_guardrails and user_query:
             blocked = self.content_filter.check_input(user_query)
             if blocked:
+                yield json.dumps({"type": "guardrail", "reason": blocked}) + "\n"
                 yield f"I can't respond to that request (triggered: {blocked})."
                 self._log_request("chat", model, 0, 0, t_start, False, session_id)
                 return
@@ -135,6 +141,7 @@ class LLMRouter:
             pii_findings = self.pii_filter.scan(user_query)
             if pii_findings:
                 pii_types = set(f["type"] for f in pii_findings)
+                yield json.dumps({"type": "guardrail", "reason": "pii", "pii_types": list(pii_types)}) + "\n"
                 yield f"I notice your message may contain sensitive information ({', '.join(pii_types)}). Please avoid sharing personal data."
                 self._log_request("chat", model, 0, 0, t_start, False, session_id)
                 return
@@ -157,6 +164,13 @@ class LLMRouter:
                 if summary:
                     enriched_messages.insert(0, {"role": "system", "content": f"Earlier in this conversation: {summary}"})
 
+        if enable_thinking and user_query:
+            thinking_sys = {
+                "role": "system",
+                "content": "When you need to reason step-by-step, enclose your reasoning in <think>...</think> tags. The final answer should come after the closing tag."
+            }
+            enriched_messages.append(thinking_sys)
+
         truncated = self.context_manager.trim_messages(
             enriched_messages, extra_text="",
             max_tokens=max_tokens or self.settings.max_tokens,
@@ -173,7 +187,7 @@ class LLMRouter:
         async for item in self._chat_with_tools(
             messages=truncated, model=model, temperature=temperature,
             max_tokens=max_tokens, images=images, tool_specs=tool_specs,
-            session_id=session_id,
+            session_id=session_id, enable_thinking=enable_thinking,
         ):
             full_response += item
             yield item
@@ -198,6 +212,7 @@ class LLMRouter:
         temperature: Optional[float] = None, max_tokens: Optional[int] = None,
         images: Optional[list[str]] = None, tool_specs: Optional[list[dict]] = None,
         session_id: Optional[str] = None, depth: int = 0,
+        enable_thinking: bool = True,
     ) -> AsyncGenerator[str, None]:
         if depth > 5:
             yield "\n\n[Max tool call depth reached]"
@@ -215,7 +230,16 @@ class LLMRouter:
 
             if content:
                 collected += content
-                yield content
+                if enable_thinking:
+                    think_match = THINK_TAG_RE.search(content)
+                    if think_match:
+                        thinking_text = think_match.group(1).strip()
+                        yield json.dumps({"type": "think", "content": thinking_text}) + "\n"
+                    clean_content = THINK_TAG_RE.sub("", content)
+                    if clean_content.strip():
+                        yield json.dumps({"type": "content", "content": clean_content}) + "\n"
+                else:
+                    yield content
 
             if calls:
                 tool_calls.extend(calls)
@@ -229,6 +253,7 @@ class LLMRouter:
                 func_name = tc.get("function", {}).get("name", "")
                 func_args = tc.get("function", {}).get("arguments", {})
 
+                yield json.dumps({"type": "tool_call", "name": func_name, "args": func_args}) + "\n"
                 yield f"\n\n⚡ **Using tool: {func_name}**\n\n"
 
                 result = self.tool_registry.execute(func_name, func_args)
@@ -238,6 +263,8 @@ class LLMRouter:
                 else:
                     tool_output = f"Error: {result.error}"
 
+                yield json.dumps({"type": "tool_result", "name": func_name, "output": tool_output[:500]}) + "\n"
+
                 messages.append({"role": "assistant", "content": collected} if collected else {"role": "assistant", "content": f"[Calling tool: {func_name}]"})
                 messages.append({"role": "tool", "content": tool_output, "name": func_name})
                 collected = ""
@@ -246,8 +273,14 @@ class LLMRouter:
                     messages=messages, model=model, temperature=temperature,
                     max_tokens=max_tokens, images=images, tool_specs=tool_specs,
                     session_id=session_id, depth=depth + 1,
+                    enable_thinking=enable_thinking,
                 ):
                     yield chunk
+
+        if not tool_calls and enable_thinking and not collected.startswith("{"):
+            final_content = THINK_TAG_RE.sub("", collected)
+            if final_content.strip():
+                yield json.dumps({"type": "done"}) + "\n"
 
     def _get_last_user_text(self, messages: list[dict]) -> str:
         for msg in reversed(messages):
