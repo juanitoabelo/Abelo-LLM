@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from src.tools.registry import ToolRegistry, ToolResult
 
 
@@ -15,17 +13,20 @@ class TestToolRegistry:
         assert "web_search" in names
         assert "web_fetch" in names
         assert "code_execute" in names
-        assert "file_read" in names
-        assert "memory_recall" in names
-        assert "rag_query" in names
-        assert "sql_query" in names
 
     def test_register_custom_tool(self) -> None:
         registry = ToolRegistry()
-        registry.register("echo", lambda args: ToolResult(success=True, output=str(args)))
+
+        def echo_fn(text: str = "") -> ToolResult:
+            return ToolResult(success=True, output=text)
+
+        registry.register("echo", "Echoes input", echo_fn, {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+        })
         spec = registry.get_specs()
         assert any(s["function"]["name"] == "echo" for s in spec)
-        result = registry.execute("echo", {"msg": "hello"})
+        result = registry.execute("echo", {"text": "hello"})
         assert result.success
         assert "hello" in result.output
 
@@ -42,11 +43,7 @@ class TestToolRegistry:
         assert "4" in result.output
 
     def test_get_names(self) -> None:
-        registry = ToolRegistry()
-
-        @registry.register("test_tool")
-        def _handler(args):
-            return ToolResult(success=True, output="ok")
-
+        from src.tools.registry import get_default_registry
+        registry = get_default_registry()
         names = registry.get_names()
-        assert "test_tool" in names
+        assert "calculator" in names

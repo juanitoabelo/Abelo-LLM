@@ -29,7 +29,8 @@ JWT_EXPIRY = 86400 * 7  # 7 days
 
 
 def _base64url_encode(data: bytes) -> str:
-    return base64url_encode(data)
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
 def _base64url_decode(s: str) -> bytes:

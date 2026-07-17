@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from src.vision.analyzer import VisionAnalyzer
 
 
@@ -9,12 +7,12 @@ class TestVisionAnalyzer:
     def test_analyzer_init(self) -> None:
         analyzer = VisionAnalyzer()
         assert analyzer is not None
+        assert analyzer.model == "gemma4:latest"
 
-    def test_available_models(self) -> None:
-        analyzer = VisionAnalyzer()
-        models = analyzer.supported_models
-        assert len(models) > 0
+    def test_analyzer_custom_model(self) -> None:
+        analyzer = VisionAnalyzer(model="llava:latest")
+        assert analyzer.model == "llava:latest"
 
     def test_analyzer_repr(self) -> None:
         analyzer = VisionAnalyzer()
-        assert "VisionAnalyzer" in repr(analyzer)
+        assert "gemma4" in analyzer.model

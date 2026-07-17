@@ -29,10 +29,11 @@ class TestMemoryStore:
         store.forget("temp_key")
         assert store.recall("temp_key") is None
 
-    def test_list_keys(self, store: MemoryStore) -> None:
+    def test_list_all_memories(self, store: MemoryStore) -> None:
         store.remember("k1", "v1")
         store.remember("k2", "v2")
-        keys = store.list_keys()
+        memories = store.get_all_memories()
+        keys = [m["key"] for m in memories]
         assert "k1" in keys
         assert "k2" in keys
 
@@ -49,3 +50,9 @@ class TestMemoryStore:
         context = store.get_session_context("session_1", limit=10)
         assert len(context) == 2
         assert context[0]["content"] == "hello"
+
+    def test_namespace_isolation(self, store: MemoryStore) -> None:
+        store.remember("key1", "value_default")
+        store.remember("key1", "value_custom", namespace="custom")
+        assert store.recall("key1") == "value_default"
+        assert store.recall("key1", namespace="custom") == "value_custom"

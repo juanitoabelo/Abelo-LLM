@@ -90,11 +90,11 @@ class KnowledgeGraph:
         return row[0] if row else -1
 
     def add_relationship(self, source_name: str, target_name: str, relation: str,
-                         source_type: str = "concept", target_type: str = "concept") -> None:
+                         source_type: str = "", target_type: str = "") -> None:
         conn = self._get_conn()
         now = time.time()
-        src_id = self.add_entity(source_name, source_type)
-        tgt_id = self.add_entity(target_name, target_type)
+        src_id = self._get_or_create_entity(source_name, source_type)
+        tgt_id = self._get_or_create_entity(target_name, target_type)
         conn.execute(
             """INSERT INTO relationships (source_entity_id, target_entity_id, relation, first_seen)
                VALUES (?, ?, ?, ?)
@@ -103,6 +103,26 @@ class KnowledgeGraph:
             (src_id, tgt_id, relation, now),
         )
         conn.commit()
+
+    def _get_or_create_entity(self, name: str, entity_type: str = "") -> int:
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            if entity_type:
+                row = conn.execute(
+                    "SELECT id FROM entities WHERE name = ? AND type = ?",
+                    (name, entity_type),
+                ).fetchone()
+                if row:
+                    return row[0]
+            row = conn.execute(
+                "SELECT id, type FROM entities WHERE name = ? ORDER BY frequency DESC LIMIT 1",
+                (name,),
+            ).fetchone()
+            if row:
+                return row[0]
+            return self.add_entity(name, entity_type or "concept")
+        finally:
+            conn.close()
 
     def extract_from_text(self, text: str, source: str = "") -> None:
         import re

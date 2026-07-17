@@ -1,51 +1,66 @@
 from __future__ import annotations
 
-from src.auth.jwt import JWTAuth, create_access_token, decode_token, hash_password, verify_password
+import tempfile
+from pathlib import Path
+
+from src.auth.jwt import UserStore, create_token, verify_token
 
 
-class TestJWTAuth:
-    def test_hash_and_verify(self) -> None:
-        password = "my_secret_password"
-        hashed = hash_password(password)
-        assert hashed != password
-        assert verify_password(password, hashed)
-        assert not verify_password("wrong_password", hashed)
-
-    def test_token_round_trip(self) -> None:
-        token = create_access_token({"sub": "test_user", "role": "admin"})
+class TestAuth:
+    def test_create_and_verify_token(self) -> None:
+        token = create_token(1, "test_user")
         assert token is not None
-        payload = decode_token(token)
+        assert token.count(".") == 2
+        payload = verify_token(token)
         assert payload is not None
-        assert payload.get("sub") == "test_user"
-        assert payload.get("role") == "admin"
+        assert payload["sub"] == 1
+        assert payload["username"] == "test_user"
 
     def test_invalid_token(self) -> None:
-        payload = decode_token("invalid.token.here")
+        payload = verify_token("invalid.token.here")
         assert payload is None
 
-    def test_register_and_login(self) -> None:
-        auth = JWTAuth()
-        user = auth.register_user("test_user", "test_password")
-        assert user is not None
-        assert user.get("username") == "test_user"
+    def test_create_and_authenticate_user(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = UserStore(str(Path(tmpdir) / "test_users.db"))
+            user = store.create_user("alice", "secret123")
+            assert user.username == "alice"
+            assert user.id > 0
 
-        token = auth.login("test_user", "test_password")
-        assert token is not None
+            authed = store.authenticate("alice", "secret123")
+            assert authed is not None
+            assert authed.username == "alice"
 
-    def test_login_wrong_password(self) -> None:
-        auth = JWTAuth()
-        auth.register_user("user2", "correct_password")
-        token = auth.login("user2", "wrong_password")
-        assert token is None
+            failed = store.authenticate("alice", "wrong_password")
+            assert failed is None
+
+    def test_duplicate_user(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = UserStore(str(Path(tmpdir) / "test_dup.db"))
+            store.create_user("bob", "pass")
+            try:
+                store.create_user("bob", "pass2")
+                assert False, "Should have raised ValueError"
+            except ValueError:
+                pass
 
     def test_get_user(self) -> None:
-        auth = JWTAuth()
-        auth.register_user("alice", "pass123")
-        user = auth.get_user("alice")
-        assert user is not None
-        assert user["username"] == "alice"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = UserStore(str(Path(tmpdir) / "test_get.db"))
+            user = store.create_user("charlie", "pass")
+            found = store.get_user(user.id)
+            assert found is not None
+            assert found.username == "charlie"
 
     def test_get_nonexistent_user(self) -> None:
-        auth = JWTAuth()
-        user = auth.get_user("nobody")
-        assert user is None
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = UserStore(str(Path(tmpdir) / "test_nonexist.db"))
+            found = store.get_user(999)
+            assert found is None
+
+    def test_user_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = UserStore(str(Path(tmpdir) / "test_exists.db"))
+            store.create_user("dave", "pass")
+            assert store.user_exists("dave") is True
+            assert store.user_exists("nobody") is False
